@@ -1,0 +1,3 @@
+[submodule "RWKV-UNet"]
+	path = RWKV-UNet
+	url = https://github.com/juntaoJianggavin/RWKV-UNet
