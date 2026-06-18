@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import argparse
 from collections import defaultdict
 
-from common import METRICS_DIR, NORM_DIR, REGIONS, ensure_project_dirs, load_selected_cases, write_csv, write_json
+from common import METRICS_DIR, NORM_DIR, REGIONS, ensure_project_dirs, load_selected_cases, parse_models_arg, write_csv, write_json
 
 
 def dice_score(pred_mask, gt_mask) -> float:
@@ -48,11 +49,16 @@ def evaluate_case_model(case, model):
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Evaluate Dice for selected model predictions")
+    parser.add_argument("--models", default="monai,kaist", help="Comma-separated model list: monai, kaist")
+    args = parser.parse_args()
+    models = parse_models_arg(args.models)
+
     ensure_project_dirs()
     cases = load_selected_cases()
     rows = []
     for case in cases:
-        for model in ("monai", "kaist"):
+        for model in models:
             row = evaluate_case_model(case, model)
             if row is not None:
                 rows.append(row)
@@ -98,7 +104,7 @@ def main() -> int:
     by_case = defaultdict(list)
     for row in rows:
         by_case[row["case_id"]].append(float(row["mean_dice"]))
-    complete_cases = {case_id: sum(values) / len(values) for case_id, values in by_case.items() if len(values) == 2}
+    complete_cases = {case_id: sum(values) / len(values) for case_id, values in by_case.items() if len(values) == len(models)}
     if complete_cases:
         success = max(complete_cases, key=complete_cases.get)
         failure = min(complete_cases, key=complete_cases.get)
@@ -107,7 +113,8 @@ def main() -> int:
             {
                 "success_case": success,
                 "failure_case": failure,
-                "selection_rule": "highest/lowest average of MONAI and KAIST mean_dice",
+                "models": models,
+                "selection_rule": "highest/lowest average mean_dice across requested models",
                 "case_scores": complete_cases,
             },
         )
@@ -115,9 +122,9 @@ def main() -> int:
     else:
         write_json(
             METRICS_DIR / "success_failure_cases.json",
-            {"success_case": None, "failure_case": None, "reason": "No case has both MONAI and KAIST predictions."},
+            {"success_case": None, "failure_case": None, "models": models, "reason": "No case has predictions for all requested models."},
         )
-        print("No complete MONAI+KAIST case pairs available for success/failure selection.")
+        print("No complete case predictions available for success/failure selection.")
     return 0 if rows else 2
 
 

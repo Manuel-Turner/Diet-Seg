@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
+MANUAL_CASES_DIR = DATA_DIR / "manual_cases"
 SUBSET_DIR = DATA_DIR / "subset"
 KAIST_INPUT_DIR = DATA_DIR / "kaist_input"
 MODELS_DIR = ROOT / "models"
@@ -39,6 +40,7 @@ REGIONS = {
 def ensure_project_dirs() -> None:
     for path in [
         RAW_DIR,
+        MANUAL_CASES_DIR,
         SUBSET_DIR,
         KAIST_INPUT_DIR,
         MONAI_BUNDLE_DIR,
@@ -220,6 +222,17 @@ def kaggle_credentials_path() -> Path:
 def kaggle_help_text() -> str:
     return (
         "Kaggle credentials are missing or Kaggle CLI is unavailable.\n"
+        "\n"
+        "Manual mini dataset fallback:\n"
+        "Place cases in this exact format before running again:\n"
+        "data/manual_cases/\n"
+        "  <case_id>/\n"
+        "    <case_id>_flair.nii.gz\n"
+        "    <case_id>_t1.nii.gz\n"
+        "    <case_id>_t1ce.nii.gz\n"
+        "    <case_id>_t2.nii.gz\n"
+        "    <case_id>_seg.nii.gz\n"
+        "\n"
         "Manual fix:\n"
         "1. Create a Kaggle account.\n"
         "2. Go to Account settings.\n"
@@ -228,6 +241,14 @@ def kaggle_help_text() -> str:
         "C:/Users/<USER>/.kaggle/kaggle.json on Windows.\n"
         "5. Run the command again.\n"
     )
+
+
+def parse_models_arg(models: str) -> List[str]:
+    parsed = [item.strip().lower() for item in models.split(",") if item.strip()]
+    invalid = [item for item in parsed if item not in {"monai", "kaist"}]
+    if invalid:
+        raise ValueError(f"Unsupported model name(s): {invalid}. Use monai, kaist, or monai,kaist.")
+    return parsed or ["monai", "kaist"]
 
 
 def executable_available(name: str) -> bool:

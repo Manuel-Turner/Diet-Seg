@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from common import METRICS_DIR, OUTPUTS_DIR, ensure_project_dirs, load_selected_cases, read_csv, read_json
+import argparse
+
+from common import METRICS_DIR, OUTPUTS_DIR, ensure_project_dirs, load_selected_cases, parse_models_arg, read_csv, read_json
 
 
 def rows_for_case(rows, case_id):
@@ -26,6 +28,11 @@ def metric_line(row):
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Create markdown report")
+    parser.add_argument("--models", default="monai,kaist", help="Comma-separated model list: monai, kaist")
+    args = parser.parse_args()
+    models = parse_models_arg(args.models)
+
     ensure_project_dirs()
     selected = load_selected_cases()
     source_path = METRICS_DIR / "dataset_source.json"
@@ -65,7 +72,8 @@ def main() -> int:
             "## Models",
             "",
             "- Model A: MONAI `brats_mri_segmentation`, pretrained, inference only.",
-            "- Model B: KAIST BraTS21 nnU-Net, pretrained Docker image `rixez/brats21nnunet`, inference only.",
+            "- Model B: KAIST BraTS21 nnU-Net, pretrained Docker image `rixez/brats21nnunet`, inference only"
+            + ("." if "kaist" in models else " (not run in this stage)."),
             "",
             "## Summary Metrics",
             "",
@@ -84,7 +92,7 @@ def main() -> int:
         success_rows = rows_for_case(dice_rows, success_id)
         lines.append(f"Success case: `{success_id}`.")
         lines.extend([f"- {metric_line(row)}" for row in success_rows])
-        lines.append("This case was selected because it had the highest average mean Dice across the two models.")
+        lines.append("This case was selected because it had the highest average mean Dice across the requested model outputs.")
         lines.append(f"![Success case](figures/success_case_{success_id}.png)")
     else:
         lines.append("No success case could be selected because paired model outputs were unavailable.")
@@ -102,6 +110,16 @@ def main() -> int:
         lines.append(f"![Failure case](figures/failure_case_{failure_id}.png)")
     else:
         lines.append("No failure case could be selected because paired model outputs were unavailable.")
+
+    if "kaist" not in models:
+        lines.extend(
+            [
+                "",
+                "## Deferred KAIST Stage",
+                "",
+                "KAIST Docker inference was not requested for this report. Run Stage 2 after Docker Desktop, WSL2 GPU support, and NVIDIA Container Toolkit are available.",
+            ]
+        )
 
     report = OUTPUTS_DIR / "report.md"
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")

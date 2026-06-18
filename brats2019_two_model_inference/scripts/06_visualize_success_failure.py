@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-from common import FIGURES_DIR, METRICS_DIR, NORM_DIR, REGIONS, ensure_project_dirs, load_selected_cases, read_csv, read_json
+from common import FIGURES_DIR, METRICS_DIR, NORM_DIR, REGIONS, ensure_project_dirs, load_selected_cases, parse_models_arg, read_csv, read_json
 
 
 COLORS = {
@@ -56,7 +57,15 @@ def title_for(case_id, name, row=None):
     )
 
 
-def make_case_figure(case, out_path: Path, metric_rows):
+def blank_panel(ax, title):
+    ax.text(0.5, 0.5, title, ha="center", va="center", fontsize=11)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+def make_case_figure(case, out_path: Path, metric_rows, models):
     import matplotlib.pyplot as plt
 
     case_id = case["case_id"]
@@ -65,25 +74,27 @@ def make_case_figure(case, out_path: Path, metric_rows):
     gt = load_nii(case["seg"]).astype("uint8")
     monai_path = NORM_DIR / "monai" / f"{case_id}_seg.nii.gz"
     kaist_path = NORM_DIR / "kaist" / f"{case_id}_seg.nii.gz"
-    if not monai_path.exists() or not kaist_path.exists():
+    if "monai" in models and not monai_path.exists():
         return False
-    monai = load_nii(monai_path).astype("uint8")
-    kaist = load_nii(kaist_path).astype("uint8")
+    monai = load_nii(monai_path).astype("uint8") if monai_path.exists() else None
+    kaist = load_nii(kaist_path).astype("uint8") if kaist_path.exists() else None
     z = choose_slice(gt, flair)
 
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
     panels = [
         (flair[:, :, z], None, "FLAIR", None),
         (flair[:, :, z], gt[:, :, z], "Ground truth", None),
-        (flair[:, :, z], monai[:, :, z], "MONAI", dice_lookup(metric_rows, case_id, "monai")),
-        (flair[:, :, z], kaist[:, :, z], "KAIST", dice_lookup(metric_rows, case_id, "kaist")),
+        (flair[:, :, z], monai[:, :, z] if monai is not None else None, "MONAI" if monai is not None else "MONAI not run", dice_lookup(metric_rows, case_id, "monai")),
+        (flair[:, :, z], kaist[:, :, z] if kaist is not None else None, "KAIST" if kaist is not None else "KAIST not run", dice_lookup(metric_rows, case_id, "kaist")),
         (t1ce[:, :, z], None, "T1ce", None),
         (t1ce[:, :, z], gt[:, :, z], "Ground truth", None),
-        (t1ce[:, :, z], monai[:, :, z], "MONAI", dice_lookup(metric_rows, case_id, "monai")),
-        (t1ce[:, :, z], kaist[:, :, z], "KAIST", dice_lookup(metric_rows, case_id, "kaist")),
+        (t1ce[:, :, z], monai[:, :, z] if monai is not None else None, "MONAI" if monai is not None else "MONAI not run", dice_lookup(metric_rows, case_id, "monai")),
+        (t1ce[:, :, z], kaist[:, :, z] if kaist is not None else None, "KAIST" if kaist is not None else "KAIST not run", dice_lookup(metric_rows, case_id, "kaist")),
     ]
     for ax, (base, label, name, row) in zip(axes.flat, panels):
-        if label is None:
+        if "not run" in name:
+            blank_panel(ax, f"{case_id}\n{name}")
+        elif label is None:
             ax.imshow(base.T, cmap="gray", origin="lower")
             ax.axis("off")
         else:
@@ -96,6 +107,11 @@ def make_case_figure(case, out_path: Path, metric_rows):
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Visualize success/failure cases")
+    parser.add_argument("--models", default="monai,kaist", help="Comma-separated model list: monai, kaist")
+    args = parser.parse_args()
+    models = parse_models_arg(args.models)
+
     ensure_project_dirs()
     cases = {case["case_id"]: case for case in load_selected_cases()}
     metric_rows = read_csv(METRICS_DIR / "dice_by_case.csv")
@@ -105,13 +121,13 @@ def main() -> int:
     success_id = selection.get("success_case")
     failure_id = selection.get("failure_case")
     if success_id and success_id in cases:
-        made += int(make_case_figure(cases[success_id], FIGURES_DIR / f"success_case_{success_id}.png", metric_rows))
+        made += int(make_case_figure(cases[success_id], FIGURES_DIR / f"success_case_{success_id}.png", metric_rows, models))
     if failure_id and failure_id in cases:
-        made += int(make_case_figure(cases[failure_id], FIGURES_DIR / f"failure_case_{failure_id}.png", metric_rows))
+        made += int(make_case_figure(cases[failure_id], FIGURES_DIR / f"failure_case_{failure_id}.png", metric_rows, models))
 
     all_dir = FIGURES_DIR / "all_cases"
     for case_id, case in cases.items():
-        made += int(make_case_figure(case, all_dir / f"{case_id}.png", metric_rows))
+        made += int(make_case_figure(case, all_dir / f"{case_id}.png", metric_rows, models))
 
     print(f"Figures generated: {made}")
     return 0 if made else 2

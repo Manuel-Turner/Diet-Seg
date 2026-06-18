@@ -14,11 +14,14 @@ from common import (
     load_selected_cases,
     log_text,
     run_command,
+    format_cmd,
 )
 
 
 def download_bundle() -> bool:
-    if (MONAI_BUNDLE_DIR / "brats_mri_segmentation").exists():
+    existing = MONAI_BUNDLE_DIR / "brats_mri_segmentation"
+    if (existing / "configs" / "inference.json").exists() or (existing / "brats_mri_segmentation" / "configs" / "inference.json").exists():
+        print(f"Using existing MONAI bundle under {existing}")
         return True
 
     command = [
@@ -36,7 +39,12 @@ def download_bundle() -> bool:
         return True
 
     fallback = (
-        "MONAI bundle download command failed. Fallback attempted with huggingface_hub snapshot_download.\n"
+        "MONAI bundle download command failed.\n"
+        f"command: {format_cmd(command)}\n"
+        f"returncode: {result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}\n\n"
+        "Fallback attempted with huggingface_hub snapshot_download.\n"
     )
     try:
         from huggingface_hub import snapshot_download
@@ -81,6 +89,12 @@ def write_case_datalist(bundle: Path, case) -> Path:
 def find_monai_output(case_output: Path):
     candidates = sorted(case_output.rglob("*_seg.nii.gz")) + sorted(case_output.rglob("*.nii.gz")) + sorted(case_output.rglob("*.nii"))
     return candidates[0] if candidates else None
+
+
+def print_case_inputs(case) -> None:
+    print(f"MONAI case {case['case_id']} expected channel order:")
+    for index, modality in enumerate(MONAI_MODALITY_ORDER):
+        print(f"  channel {index}: {modality} -> {case[modality]}")
 
 
 def normalize_monai_labelmap(src: Path, dst: Path, gt_path: Path) -> None:
@@ -128,6 +142,8 @@ def main() -> int:
         case_output = MONAI_PRED_DIR / case_id
         case_output.mkdir(parents=True, exist_ok=True)
         datalist = write_case_datalist(bundle, case)
+        print_case_inputs(case)
+        print(f"MONAI output directory: {case_output}")
         command = [
             sys.executable,
             "-m",
@@ -153,6 +169,9 @@ def main() -> int:
         if output is None:
             log_text(f"02_monai_normalize_{case_id}.log", f"No MONAI NIfTI output found in {case_output}\n")
             continue
+        raw_copy = case_output / f"{case_id}_monai_raw_output{''.join(output.suffixes)}"
+        if output.resolve() != raw_copy.resolve():
+            shutil.copy2(output, raw_copy)
         normalize_monai_labelmap(output, NORM_DIR / "monai" / f"{case_id}_seg.nii.gz", Path(case["seg"]))
         completed_cases += 1
 

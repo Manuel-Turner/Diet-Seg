@@ -17,9 +17,25 @@ The goal is an inference-only comparison that can produce original MRI/ground-tr
 
 Install Python dependencies:
 
-```bash
-pip install -r requirements.txt
+Windows PowerShell:
+
+```powershell
+.\scripts\setup_env_windows.ps1
 ```
+
+Linux/WSL:
+
+```bash
+bash scripts/setup_env_linux.sh
+```
+
+Both setup scripts install CUDA PyTorch with:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+```
+
+If the CUDA install fails, switch to the official PyTorch selector and use the command that matches your NVIDIA driver and CUDA setup: https://pytorch.org/get-started/locally/
 
 ## Dataset Access
 
@@ -39,6 +55,71 @@ Expected training layout usually contains `HGG` and `LGG` folders. Each selected
 ```
 
 The default subset target is 6 cases, preferably 3 HGG and 3 LGG. If fewer complete cases are available, the data script selects as many as possible and logs the reason.
+
+For the fastest Stage 1 validation, manually place two training cases here:
+
+```text
+data/manual_cases/
+  <case_id>/
+    <case_id>_flair.nii.gz
+    <case_id>_t1.nii.gz
+    <case_id>_t1ce.nii.gz
+    <case_id>_t2.nii.gz
+    <case_id>_seg.nii.gz
+```
+
+`scripts/01_prepare_data.py --auto` checks `data/manual_cases/` first, then `data/raw/`, then Kaggle.
+
+## Stage 1: MONAI-only minimal run
+
+The fastest validation path is MONAI-only:
+
+1. Install Python dependencies with `scripts/setup_env_windows.ps1` or `scripts/setup_env_linux.sh`.
+2. Provide 2 BraTS2019 training cases manually in `data/manual_cases/`, or configure Kaggle access.
+3. Run MONAI inference only.
+4. Normalize MONAI predictions.
+5. Evaluate WT/TC/ET Dice.
+6. Visualize the available MONAI outputs.
+
+PowerShell:
+
+```powershell
+.\scripts\run_stage1_monai_only.ps1
+```
+
+Bash:
+
+```bash
+bash scripts/run_stage1_monai_only.sh
+```
+
+Equivalent step-by-step commands:
+
+```bash
+python scripts/00_check_env.py
+python scripts/01_prepare_data.py --auto --num_cases 2
+python scripts/02_run_monai_inference.py
+python scripts/04_normalize_predictions.py --models monai
+python scripts/05_evaluate.py --models monai
+python scripts/06_visualize_success_failure.py --models monai
+python scripts/07_make_report.py --models monai
+```
+
+If `torch`, `monai`, or `nibabel` are missing, run the setup script first. If no data exists, place cases in `data/manual_cases/` using the exact format above.
+
+## Stage 2: KAIST Docker run
+
+KAIST inference requires Docker Desktop, WSL2 GPU support, and NVIDIA Container Toolkit. Skip this stage until Stage 1 works.
+
+After Docker is available, run:
+
+```bash
+python scripts/03_run_kaist_inference.py
+python scripts/04_normalize_predictions.py --models monai,kaist
+python scripts/05_evaluate.py --models monai,kaist
+python scripts/06_visualize_success_failure.py --models monai,kaist
+python scripts/07_make_report.py --models monai,kaist
+```
 
 ## One-Command Workflow
 

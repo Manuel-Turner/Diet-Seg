@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-from common import NORM_DIR, ensure_project_dirs, load_selected_cases, log_text
+from common import NORM_DIR, ensure_project_dirs, load_selected_cases, log_text, parse_models_arg
 
 
 def nearest_resample_to_gt(pred, gt_shape):
@@ -39,12 +40,17 @@ def normalize_one(model: str, case) -> bool:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Normalize model predictions to BraTS labelmaps")
+    parser.add_argument("--models", default="monai,kaist", help="Comma-separated model list: monai, kaist")
+    args = parser.parse_args()
+    models = parse_models_arg(args.models)
+
     ensure_project_dirs()
     cases = load_selected_cases()
     ok = 0
-    total = len(cases) * 2
+    total = len(cases) * len(models)
     for case in cases:
-        for model in ("monai", "kaist"):
+        for model in models:
             ok += int(normalize_one(model, case))
     print(f"Normalized predictions available: {ok}/{total}")
     return 0 if ok == total else 2

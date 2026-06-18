@@ -7,6 +7,7 @@ from pathlib import Path
 
 from common import (
     RAW_DIR,
+    MANUAL_CASES_DIR,
     append_log,
     ensure_project_dirs,
     discover_brats_cases,
@@ -41,6 +42,25 @@ def find_existing_raw_root() -> Path | None:
         if discover_brats_cases(candidate):
             return candidate
     return None
+
+
+def find_manual_cases_root() -> Path | None:
+    if not MANUAL_CASES_DIR.exists():
+        return None
+    return MANUAL_CASES_DIR if discover_brats_cases(MANUAL_CASES_DIR) else None
+
+
+def expected_manual_format_text() -> str:
+    return (
+        "Expected manual mini dataset format:\n"
+        "data/manual_cases/\n"
+        "  <case_id>/\n"
+        "    <case_id>_flair.nii.gz\n"
+        "    <case_id>_t1.nii.gz\n"
+        "    <case_id>_t1ce.nii.gz\n"
+        "    <case_id>_t2.nii.gz\n"
+        "    <case_id>_seg.nii.gz\n"
+    )
 
 
 def download_kaggle() -> bool:
@@ -103,16 +123,22 @@ def main() -> int:
             return 2
         source_root = find_existing_raw_root()
     elif args.auto:
-        source_root = find_existing_raw_root()
-        source_type = "data/raw"
+        source_root = find_manual_cases_root()
+        source_type = "data/manual_cases"
         if source_root is None:
-            print("No complete BraTS2019 cases found in data/raw; trying Kaggle download.")
+            source_root = find_existing_raw_root()
+            source_type = "data/raw"
+        if source_root is None:
+            print("No complete cases found in data/manual_cases or data/raw; trying Kaggle download.")
             source_type = "kaggle"
             if not download_kaggle():
-                append_log(
-                    "01_prepare_data.log",
-                    f"\ninvoked command: {invoked}\nerror: no local BraTS2019 data and Kaggle download unavailable\n",
+                text = (
+                    f"\ninvoked command: {invoked}\n"
+                    "error: no manual cases, no local BraTS2019 data, and Kaggle download unavailable\n\n"
+                    + expected_manual_format_text()
                 )
+                print(expected_manual_format_text())
+                append_log("01_prepare_data.log", text)
                 return 2
             source_root = find_existing_raw_root()
     else:
