@@ -1,0 +1,10 @@
+Kaggle credentials are missing or Kaggle CLI is unavailable.
+Manual fix:
+1. Create a Kaggle account.
+2. Go to Account settings.
+3. Create API token.
+4. Put kaggle.json in ~/.kaggle/kaggle.json on Linux/WSL or C:/Users/<USER>/.kaggle/kaggle.json on Windows.
+5. Run the command again.
+
+invoked command: python scripts/01_prepare_data.py --auto --num_cases 2
+error: no local BraTS2019 data and Kaggle download unavailable

@@ -1,0 +1,9 @@
+Python version: 3.11.9 (C:\Program Files\Python311\python.exe)
+PyTorch version: not installed (ModuleNotFoundError: No module named 'torch')
+CUDA available: unavailable
+GPU name: unavailable
+Docker availability: not found
+nvidia-smi availability: available (Thu Jun 18 18:46:52 2026       )
+Kaggle API availability: not found
+MONAI availability: not installed
+KAIST Docker inference cannot run until Docker and NVIDIA Container Toolkit are available.
