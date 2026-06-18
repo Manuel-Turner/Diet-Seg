@@ -1,156 +1,148 @@
-# Hardness-based Image Segmentation Model User Guide
+# Diet-Seg
 
-## Project Overview
+This repository provides the revised Diet-Seg implementation for BraTS-style 3D brain tumor segmentation. It is organized as a reproducible code/configuration release for the Diet-Seg manuscript revision.
 
-This project implements a medical image segmentation model based on RWKV-UNet, with special focus on hardness-based segmentation methods and edge detection network (EdgeNet). The model is primarily used for brain tumor segmentation tasks, adjusting the training process by calculating the segmentation difficulty (hardness) of samples to improve segmentation performance on difficult samples.
+The code includes model definitions, dataset loader, fold-wise training scripts, teacher-derived entropy-hardness generation, hardness-weighted loss implementation, sliding-window inference, and evaluation-oriented utilities. It does not include fabricated training logs, checkpoints, or experimental metrics.
 
-## Key Features
+## Reproducibility Release
 
-1. **Hardness-based Segmentation**: Adjusts the training process specifically by calculating the segmentation difficulty of each sample, improving segmentation performance on difficult samples
-2. **RWKV-UNet Architecture**: Combines the RWKV (Receptance Weighted Key Value) attention mechanism with UNet architecture, enhancing the model's expressive capability
-3. **Edge Detection Enhancement**: Uses a specialized EdgeNet to improve the accuracy of segmentation boundaries, particularly suitable for fine structure segmentation in medical images
+All controlled experiments use the same fold split, preprocessing pipeline, patch size, augmentation policy, optimizer configuration, validation rule, checkpoint selection criterion, and inference protocol. No architecture-specific patch-size tuning, test-time augmentation, or model-specific post-processing is used.
 
-## File Structure
+The fold-wise teacher-student protocol is leakage-controlled:
 
-```
-git/
-├── models/
-│   ├── rwkv_unet.py          # Basic RWKV-UNet model implementation
-│   ├── rwkv_unet_edge.py     # RWKV-UNet model with edge detection
-│   ├── edge_detection.py     # Edge detection network implementation
-│   └── ccm/
-│       └── ccm.py            # Channel mixing module
-├── datasets/
-│   └── dataset.py            # Dataset processing related code
-├── utils/
-│   └── calc_hardness.py      # Tool for calculating segmentation difficulty
-└── README.md                 # Project documentation
-```
+- The teacher is trained only on the training cases in each fold.
+- Entropy hardness maps are generated only for training cases.
+- Validation and test cases are never used for teacher training, hardness-map generation, hyperparameter selection, or model-specific tuning.
 
-## Usage Instructions
+## Public Defaults
 
-### 1. Calculate Sample Hardness
+- Python: 3.10.13
+- PyTorch: 2.1.2
+- TorchVision: 0.16.2
+- CUDA runtime: 11.8 through `pytorch-cuda=11.8`
+- MONAI: 1.3.0
+- NumPy: 1.24.4
+- SciPy: 1.10.1
+- nibabel: 5.1.0
+- SimpleITK: 2.3.1
+- scikit-image: 0.21.0
+- einops: 0.7.0
+- PyYAML: 6.0.1
+- Optimizer: AdamW
+- Learning rate: 1e-4
+- AdamW betas: `(0.9, 0.999)`
+- AdamW epsilon: `1e-8`
+- Weight decay: `1e-5`
+- Precision: AMP mixed precision enabled by default
+- Random seed: 1234
+- Patch / ROI size: `128 x 128 x 128`
+- Input modalities: T1, T1ce, T2, FLAIR
+- Output regions: ET, WT, TC
+- Inference: sliding-window inference with ROI `128 x 128 x 128` and overlap `0.5`
+- Test-time augmentation: disabled
+- Model-specific post-processing: disabled
 
-First, you need to calculate the segmentation difficulty of each sample in the dataset, which will be used for sample weighting during training:
+## Repository Layout
 
-```python
-from utils.calc_hardness import HardnessCalculator
-
-# Initialize hardness calculator
-calculator = HardnessCalculator(
-    pred_folder='path/to/predictions',  # Prediction results folder
-    gt_folder='path/to/ground_truth'   # Ground truth labels folder
-)
-
-# Calculate and save hardness dictionary
-hardness_dict = calculator.calculate_hardness('./hardness_dict.pkl')
-
-# Visualize hardness distribution
-calculator.visualize_hardness_distribution(hardness_dict)
-```
-
-### 2. Dataset Preparation
-
-Use the `BratsDataset` class in `datasets/dataset.py` to load data:
-
-```python
-from datasets.dataset import BratsConfig, get_brats_dataset
-from torch.utils.data import DataLoader
-
-# Configure dataset parameters
-config = BratsConfig(
-    train_folder='path/to/brats_data',
-    target_size=(128, 128, 128),
-    is_gz=False  # Set according to data format
-)
-
-# Create dataset and data loader
-dataset = get_brats_dataset(config)
-loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
-```
-
-### 3. Model Training
-
-Train using the RWKV-UNet model with edge detection:
-
-```python
-from models.rwkv_unet_edge import RWKV_UNet
-import torch
-from torch import optim
-from torch.nn import functional as F
-
-# Initialize model
-model = RWKV_UNet(
-    in_chans=4,           # Input channels (4 modalities)
-    out_chans=3,          # Output channels (3 segmentation classes)
-    img_size=128          # Image size
-)
-model.cuda()
-
-# Optimizer
-optimizer = optim.AdamW(model.parameters(), lr=1e-4)
-
-# Training loop
-for epoch in range(800):
-    for batch in loader:
-        images = batch['image'].cuda()        # [B, 4, 128, 128, 128]
-        labels = batch['label'].cuda()        # [B, 128, 128, 128]
-        hardness = batch['hardness'].cuda()   # [B]
-        
-        # Forward propagation
-        outputs = model(images.view(-1, 4*128, 128, 128))
-        outputs = outputs.view(-1, 3, 128, 128, 128)
-        
-        # Calculate loss (weighted by hardness)
-        loss_ce = F.cross_entropy(outputs, labels, reduction='none')
-        loss_ce = (loss_ce * (1 + hardness.view(-1, 1, 1, 1))).mean()
-        
-        # Backpropagation
-        optimizer.zero_grad()
-        loss_ce.backward()
-        optimizer.step()
-        
-    # Save model
-    if (epoch + 1) % 50 == 0:
-        torch.save(model.state_dict(), f'./checkpoints/epoch_{epoch}.pth')
+```text
+configs/
+  dietseg_brats2019_repro.yaml
+  dietseg_brats2020_repro.yaml
+datasets/
+  dataset.py
+legacy/
+  legacy_calc_error_hardness.py
+models/
+  rwkv_unet.py
+  rwkv_unet_edge.py
+scripts/
+  check_environment.py
+  generate_entropy_hardness.py
+  infer_sliding_window.py
+  smoke_test_repro.py
+  train_student.py
+  train_teacher.py
+utils/
+  entropy_hardness.py
+  repro_config.py
+environment.yml
+requirements.txt
 ```
 
-### 4. Model Inference
+## Environment
 
-Use the trained model for inference:
-
-```python
-import nibabel as nib
-import numpy as np
-from models.rwkv_unet_edge import RWKV_UNet
-
-# Load model
-model = RWKV_UNet(in_chans=4, out_chans=3, img_size=128)
-model.load_state_dict(torch.load('path/to/model.pth'))
-model.cuda()
-model.eval()
-
-# Load test data
-test_data = {...}  # Load test data
-
-# Inference
-with torch.no_grad():
-    outputs = model(test_data.cuda())
-    predictions = torch.argmax(outputs, dim=1)
-
-# Save results
-predictions = predictions.cpu().numpy()
-# Save prediction results as NIfTI file
+```bash
+conda env create -f environment.yml
+conda activate dietseg
+python scripts/check_environment.py
 ```
+
+## Data And Splits
+
+Set `data.root` and `data.split_file` in the YAML config before running training. Split files are expected to contain fold-wise train/val/test case IDs, for example:
+
+```json
+{
+  "folds": {
+    "0": {
+      "train": ["BraTS19_case_001"],
+      "val": ["BraTS19_case_101"],
+      "test": ["BraTS19_case_201"]
+    }
+  }
+}
+```
+
+The dataset loader uses fixed modality order `t1, t1ce, t2, flair`, non-zero brain-region z-score normalization, foreground crop/sampling, and BraTS region remapping:
+
+- ET: label `4`
+- WT: labels `1, 2, 4`
+- TC: labels `1, 4`
+
+## Commands
+
+Train the fold-wise teacher only on training cases:
+
+```bash
+python scripts/train_teacher.py --config configs/dietseg_brats2019_repro.yaml --fold 0
+```
+
+Generate teacher-derived entropy hardness maps only for training cases:
+
+```bash
+python scripts/generate_entropy_hardness.py --config configs/dietseg_brats2019_repro.yaml --fold 0
+```
+
+Train the RWKV-UNet student with EdgeNet and hardness-weighted region CE using `1+h`:
+
+```bash
+python scripts/train_student.py --config configs/dietseg_brats2019_repro.yaml --fold 0
+```
+
+Run sliding-window inference:
+
+```bash
+python scripts/infer_sliding_window.py --config configs/dietseg_brats2019_repro.yaml --fold 0 --checkpoint checkpoints/student/brats2019/fold0/best.pt
+```
+
+Run lightweight reproducibility smoke tests:
+
+```bash
+python scripts/smoke_test_repro.py
+```
+
+## Entropy Hardness
+
+The revised manuscript uses teacher-derived entropy hardness. The script reads teacher probability maps, computes voxel-wise entropy,
+
+```text
+H(x) = -sum_c p_c(x) log(p_c(x) + eps)
+```
+
+and normalizes by `log(C)` so the hardness map lies in `[0, 1]`. The script reads the fold split file and refuses to generate maps for validation/test cases.
+
+Legacy prediction-vs-ground-truth Dice-error hardness code has been moved to `legacy/legacy_calc_error_hardness.py` and is kept only for old comparisons. It is not used for the revised main experiments.
 
 ## Notes
 
-1. Model training requires a large GPU memory, it is recommended to use a GPU with at least 16GB of VRAM
-2. Data preprocessing steps have a significant impact on model performance, please ensure correct normalization and data augmentation
-3. Hardness calculation requires prediction results from a baseline model first, you can use a simple UNet model to generate initial predictions
-
-## References
-
-- Papers related to RWKV attention mechanism
-- Edge detection techniques in medical image segmentation
-- Research on training strategies based on sample difficulty
+The repository supplies the reproducible framework and public defaults. It does not claim full dataset-level reproducibility until local BraTS paths, fold split files, teacher probability maps, and checkpoints are provided.

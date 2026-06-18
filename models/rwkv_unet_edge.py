@@ -1,35 +1,28 @@
-import math
-from torch.utils.cpp_extension import load
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from timm.layers import DropPath, create_act_layer,  LayerType
 import numpy as np
-import torchvision
-from typing import Callable, Dict, Optional, Type
-from einops import rearrange, reduce
-from timm.layers.activations import *
-from timm.layers import DropPath, trunc_normal_
-import math
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
-from timm.layers import DropPath, create_act_layer, LayerType
-import numpy as np
-import torchvision
-from typing import Callable, Dict, Optional, Type
-from edge_detection import Edgenet
+from typing import Callable, Optional
+
+try:
+    from .edge_detection import Edgenet
+except ImportError:  # pragma: no cover - supports direct script imports
+    from edge_detection import Edgenet
+
+LayerType = Callable[..., nn.Module]
+
+
+def create_act_layer(act_layer: LayerType, inplace: bool = True) -> nn.Module:
+    try:
+        return act_layer(inplace=inplace)
+    except TypeError:
+        return act_layer()
 
 inplace = True
 
 
 T_MAX = 1024
 inplace = True
-
-wkv_cuda = load(name="wkv_1", sources=["RWKV-UNet/cuda/wkv_op.cpp", "RWKV-UNet/cuda/wkv_cuda.cu"],
-                verbose=True, extra_cuda_cflags=['-res-usage',
-                # '-maxrregcount 60',
-                '--use_fast_math', '-allow-unsupported-compiler', '-O3', f'-DTmax={T_MAX}'])
 
 def num_groups(group_size: Optional[int], channels: int):
     if not group_size:  # 0 or None

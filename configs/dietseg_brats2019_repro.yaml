@@ -1,0 +1,116 @@
+experiment:
+  name: dietseg_brats2019_repro
+  dataset: BraTS2019
+  seed: 1234
+  fold_protocol: 5-fold
+  fold_index: 0
+  deterministic: true
+
+data:
+  root: /path/to/BraTS2019
+  split_file: splits/brats2019_folds_seed1234.json
+  modalities: [t1, t1ce, t2, flair]
+  input_channels: 4
+  output_regions:
+    ET: [4]
+    WT: [1, 2, 4]
+    TC: [1, 4]
+
+preprocessing:
+  use_brats_preprocessed_volumes: true
+  intensity_normalization: nonzero_zscore
+  foreground_crop: true
+  image_interpolation: trilinear
+  label_interpolation: nearest
+
+sampling:
+  patch_size: [128, 128, 128]
+  foreground_aware_sampling: true
+  foreground_ratio: 0.67
+
+augmentation:
+  enabled: true
+  random_flip:
+    enabled: true
+    probability: 0.2
+    axes: [0, 1, 2]
+  random_rotate90:
+    enabled: true
+    probability: 0.2
+  random_intensity_scale:
+    enabled: true
+    probability: 0.1
+    factors: 0.1
+  random_intensity_shift:
+    enabled: true
+    probability: 0.1
+    offsets: 0.1
+
+model:
+  student_name: RWKV-UNet
+  use_edgenet: true
+  in_channels: 4
+  out_channels: 3
+  img_size: 128
+
+teacher:
+  name: 3D U-Net
+  fold_wise: true
+  train_on_training_fold_only: true
+  checkpoint_dir: checkpoints/teacher/brats2019/fold{fold_index}
+  output_probability_maps: true
+
+hardness:
+  type: teacher_entropy
+  generate_for_training_cases_only: true
+  normalize: true
+  normalization_scope: per_volume
+  range: [0.0, 1.0]
+  weight_form: 1+h
+  detach: true
+  save_dir: hardness_maps/brats2019/fold{fold_index}
+
+loss:
+  dice_loss: true
+  cross_entropy_loss: true
+  hardness_weighted_ce: true
+  background_regularization: true
+  dice_include_background: false
+  ce_weight_form: 1+h
+
+optimizer:
+  name: AdamW
+  learning_rate: 1.0e-4
+  betas: [0.9, 0.999]
+  epsilon: 1.0e-8
+  weight_decay: 1.0e-5
+
+scheduler:
+  name: warmup_cosine
+  warmup_epochs: 50
+
+training:
+  epochs: 300
+  batch_size: 3
+  num_workers: 8
+  amp: true
+  gradient_clip_norm: null
+  validation_interval: 100
+  checkpoint_metric: mean_dice
+  save_best_only: true
+
+inference:
+  method: sliding_window
+  roi_size: [128, 128, 128]
+  sw_batch_size: 1
+  overlap: 0.5
+  mode: gaussian
+  test_time_augmentation: false
+  post_processing: none
+
+evaluation:
+  regions: [ET, WT, TC]
+  metrics: [Dice, HD95, ASSD, Surface_DSC, Boundary_F1]
+  surface_tolerance_mm: 1.0
+  unit: subject_level
+  report: mean_std
